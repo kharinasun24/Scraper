@@ -10,15 +10,15 @@ translations = Translations.load(
 
 _ = translations.gettext
 
-from rapidfuzz import process
 from core.fuzzy import korrigiere_kategorie
-from core.products import Product
 
 if __name__ == "__main__":
 
+    print("start")
 
+    print(_("Nach was wird gesucht?"))
 
-    eingabe = input("butter, kefir, ... ?")
+    eingabe = input("butter, kefir, milch, joghurt, pizza ?")
 
     kategorie_ziel = korrigiere_kategorie(eingabe)
 

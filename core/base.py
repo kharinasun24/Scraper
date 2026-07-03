@@ -18,7 +18,7 @@ class BaseScraper(ABC):
             # 1. WICHTIG: headless=False, damit ALDI uns nicht blockiert!
             # 'args' schaltet die internen "Ich bin ein Bot"-Flaggen von Chromium aus.
             browser = p.chromium.launch(
-                headless=True,
+                headless=False,
                 args=["--disable-blink-features=AutomationControlled"]
             )
 

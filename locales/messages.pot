@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-02 11:32+0200\n"
+"POT-Creation-Date: 2026-07-02 14:05+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,15 +17,19 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.18.0\n"
 
-#: main.py:26
+#: main.py:17
+msgid "Nach was wird gesucht?"
+msgstr "Что ты ищешь?"
+
+#: main.py:24
 msgid "Eine solche Kategorie kenne ich nicht."
-msgstr "Eine solche Kategorie kenne ich nicht."
+msgstr "Мне незнакома такая категория."
 
-#: main.py:33
+#: main.py:31
 msgid "Keine Produkte gefunden."
-msgstr "Keine Produkte gefunden."
+msgstr "Товары не найдены."
 
-#: scraper/aldi.py:93
-msgid "   Kein Produktname gefunden."
-msgstr "   Kein Produktname gefunden."
+#: scraper/aldi.py:130
+msgid "   Preis konnte nicht gelesen werden."
+msgstr "   Цена не была прочитана."
 
