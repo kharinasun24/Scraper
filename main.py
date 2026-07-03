@@ -14,8 +14,6 @@ from core.fuzzy import korrigiere_kategorie
 
 if __name__ == "__main__":
 
-    print("start")
-
     print(_("Nach was wird gesucht?"))
 
     eingabe = input("butter, kefir, milch, joghurt, pizza ?")

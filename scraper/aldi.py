@@ -4,9 +4,10 @@ import re
 import time
 
 from babel.support import Translations
+
 translations = Translations.load(
     dirname='locales',
-    locales=['de']   # oder ['en']
+    locales=['de']  # oder ['en']
 )
 
 _ = translations.gettext
@@ -45,57 +46,47 @@ class AldiScraper(BaseScraper):
             except Exception as e:
                 log.error(f"Fehler bei URL {url}: {e}")
 
-        # Wichtig: Außerhalb der Schleife, damit alle gesammelten Produkte zurückgegeben werden
         return produkte
 
     ############################################################
 
     def _collect_product_links(self, page, kategorie):
-        # Wir importieren das Hauptmodul und die universelle Funktion
-        import playwright_stealth
-
-        suchbegriff = "pizz" if kategorie.lower() == "pizza" else kategorie
+        # Das Suchwort wird nun voll übergeben (kein Abschneiden zu "pizz" mehr)
+        suchbegriff = kategorie.strip()
         direkte_produkt_links = set()
 
-        # 1. STEALTH AKTIVIEREN: Die sicherste Methode, die in jeder Version existiert
-        log.info("[ALDI] Aktiviere Playwright-Stealth Schutz-Umgehung...")
-        try:
-            playwright_stealth.with_stealth(page, playwright_stealth.StealthConfig())
-        except Exception as stealth_err:
-            log.warning(f"[ALDI] Stealth-Initialisierung fehlgeschlagen: {stealth_err}")
-
-        search_url = f"https://www.aldi-sued.de/de/suchergebnisse.html?searchterm={suchbegriff}"
-        log.info(f"[ALDI] Rufe getarnte Suchseite auf: {search_url}")
+        # FIX: Exakt die URL-Struktur, die du im Browser siehst
+        search_url = f"https://www.aldi-sued.de/suchergebnisse?q={suchbegriff}"
+        log.info(f"[ALDI] Rufe Suchseite über echtes Profil auf: {search_url}")
 
         try:
             page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
-            page.wait_for_timeout(2500)
+            page.wait_for_timeout(3000) # Kurz warten, bis die Kacheln geladen sind
 
-            # 3x sanft scrollen für das Lazy-Loading der Produkt-Kacheln
+            # 3x sanft scrollen für das Lazy-Loading der Produkte
             for _ in range(3):
                 page.evaluate("window.scrollBy(0, 1500)")
                 page.wait_for_timeout(1000)
 
             soup = BeautifulSoup(page.content(), "html.parser")
 
-            # 2. LINKS EXTRAHIEREN
+            # LINKS EXTRAHIEREN
             for a in soup.find_all("a", href=True):
                 href = str(a["href"])
                 link_text = a.get_text(" ", strip=True).lower()
 
-                # Systemseiten rigoros ignorieren
+                # Systemseiten ignorieren
                 ignoriere = ["/k/", "/kategorie/", "/c/", "filter=", "hilfe", "impressum", "datenschutz"]
                 if any(x in href.lower() for x in ignoriere):
                     continue
 
-                # Relevanz prüfen (Suchwort im Text oder Link?)
+                # Prüfen, ob der Link oder Text relevant ist
                 ist_relevant = (
                         suchbegriff.lower() in link_text
-                        or kategorie.lower() in link_text
-                        or suchbegriff.lower() in href.lower()
+                        or href.lower().find(suchbegriff.lower()) != -1
                 )
 
-                # Typischer ALDI-Produktpfad
+                # Typische ALDI-Produktmerkmale in der URL
                 ist_produkt_pfad = "/p." in href or "/p/" in href or "/produkte/" in href
 
                 if ist_relevant or ist_produkt_pfad:
@@ -108,7 +99,7 @@ class AldiScraper(BaseScraper):
         except Exception as e:
             log.error(f"[ALDI] Fehler beim Sammeln der Produktlinks: {e}")
 
-        log.info(f"[ALDI] Fertig! {len(direkte_produkt_links)} echte Produktlinks mit Stealth extrahiert.")
+        log.info(f"[ALDI] Fertig! {len(direkte_produkt_links)} echte Produktlinks extrahiert.")
         return direkte_produkt_links
 
     ############################################################
