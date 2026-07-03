@@ -37,7 +37,7 @@ class BaseScraper(ABC):
                 context = p.chromium.launch_persistent_context(
                     user_data_dir=user_data_dir,
                     headless=False,  # Zeigt das Browserfenster
-                    channel="chrome",  # Nutzt dein installiertes Google Chrome
+                    channel="chrome",  # Nutzt mein installiertes Google Chrome
                     args=[
                         "--disable-blink-features=AutomationControlled",
                         "--start-maximized"
@@ -51,7 +51,7 @@ class BaseScraper(ABC):
                 page.goto(self.start_url, wait_until="domcontentloaded", timeout=30000)
                 time.sleep(1)
 
-                # Deine Scraper-Logik ausführen
+                # Meine Scraper-Logik ausführen
                 products = self.extract_logic(page, kategorie)
                 return products if isinstance(products, list) else []
 

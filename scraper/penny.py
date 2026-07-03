@@ -38,7 +38,7 @@ class PennyScraper(BaseScraper):
         soup = BeautifulSoup(html, "html.parser")
         produkte = []
 
-        # Wir nehmen deine funktionierenden Produktkarten-Selektoren
+        # Wir nehmen meine funktionierenden Produktkarten-Selektoren
         produkt_karten = soup.find_all(["div", "article", "li"], class_=lambda x: x and any(
             keyword in x.lower() for keyword in ["product", "angebot", "tile", "card", "item"]
         ))
