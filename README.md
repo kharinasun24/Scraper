@@ -1,0 +1,1 @@
+A scraper that intends to compare prices for specific products sold in German discounters.
