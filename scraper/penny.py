@@ -142,20 +142,29 @@ class PennyScraper(BaseScraper):
         #    print(f"Gefundenes Produkt im Speicher: {p['name']} für {p['preis']:.2f} €")
 
         for p in alle_produkte:
+            produkt_name_original = p["name"]
+            produkt_name_lower = produkt_name_original.lower()
+
             karte_text = p["raw_card"].get_text().lower()
             karte_html = str(p["raw_card"]).lower()
-            produkt_name = p["name"].lower()
 
-            # Wir lassen das Produkt zu, wenn eines der Schlagworte im Namen, im Text oder im HTML der Karte (z.B. Bild-URLs) vorkommt
-            if any(syn in produkt_name or syn in karte_text or syn in karte_html for syn in synonyme):
-                # Bereinigen (wir brauchen raw_card im Ergebnis nicht mehr)
+            # 1. ZENTRALE PRÜFUNG ÜBER DIE BASISKLASSE:
+            # Wir übergeben hier den originalen Namen (oder den lower, das ist egal, da ist_stoppwort intern auch .lower() nutzt)
+            if self.ist_stoppwort(produkt_name_original, kategorie):
+                # log.info(f"   [STOPPWORT] {produkt_name_original} übersprungen.")
+                continue
+
+            # 2. SYNONYM- UND RELEVANZ-FILTER
+            # Wir lassen das Produkt zu, wenn eines der Schlagworte im Namen, im Text oder im HTML der Karte vorkommt
+            if any(syn in produkt_name_lower or syn in karte_text or syn in karte_html for syn in synonyme):
+                # Bereinigen (wir extrahieren nur das, was in die Product-Datenstruktur gehört)
                 sauberes_produkt = {
-                    "name": p["name"],
+                    "name": produkt_name_original,
                     "preis": p["preis"],
                     "url": p["url"]
                 }
                 gefilterte_produkte.append(sauberes_produkt)
-                log.info(f"Teste Produkt bei Penny: {p['name']} für {p['preis']:.2f} €")
+                log.info(f"   [TREFFER] {produkt_name_original} -> {p['preis']:.2f} €")
 
         # 3. Duplikate entfernen
         seen = set()

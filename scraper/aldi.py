@@ -152,6 +152,10 @@ class AldiScraper(BaseScraper):
         vollstaendiger_name = f"{brand} {name}".strip()
         ausgabe_text = f"   {vollstaendiger_name} -> {preis:.2f} €"
 
+        if self.ist_stoppwort(vollstaendiger_name, kategorie):
+            # log.info(f"   [STOPPWORT] {vollstaendiger_name} übersprungen.")
+            return None
+
         # Suchbegriff-Filter für den finalen Output
         if kategorie.lower() == "pizza":
             kategorie = "pizz"
