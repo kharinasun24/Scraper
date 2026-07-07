@@ -5,7 +5,8 @@ from core.products import Product
 from typing import List
 
 class PriceManager:
-    def __init__(self):
+    def __init__(self, plz: str = None):
+        self.plz = plz
         self.scraper_liste = {
             "Penny": PennyScraper(),
             "Aldi": AldiScraper()

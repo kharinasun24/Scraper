@@ -17,8 +17,8 @@ from core.logger import get_logger
 log = get_logger("penny")
 
 class PennyScraper(BaseScraper):
-    def __init__(self):
-        super().__init__("https://www.penny.de/angebote")
+    def __init__(self, plz: str = None):
+        super().__init__("https://www.penny.de/angebote", plz=plz)
 
         # Hier definieren wir alle zusätzlichen URLs, die wir AUCH noch abgrasen wollen
         self.zusatz_urls = [
@@ -106,6 +106,46 @@ class PennyScraper(BaseScraper):
 
     def extract_logic(self, page, kategorie: str = "butter"):
         log.info("Penny-Extraktion läuft...")
+
+        # =========================================================================
+        # NEU: REGIONALE MARKT-AUSWAHL GANZ AM ANFANG
+        # =========================================================================
+        try:
+            # 1. Cookie-Banner weghauen, falls es da ist
+            if page.is_visible("#onetrust-accept-btn-handler"):
+                log.info("Penny Cookie-Banner erkannt, akzeptiere...")
+                page.click("#onetrust-accept-btn-handler")
+                page.wait_for_timeout(1000)
+
+            # 2. Markt mit der zentralen PLZ aus der Basisklasse auswählen
+            if self.plz:
+                log.info(f"Stelle Penny-Markt auf PLZ {self.plz} ein...")
+
+                # Klick auf den Markt-Wähler oben in der Navigation
+                # (Penny nutzt oft diese Klassen oder IDs für den Picker)
+                page.click(".market-navigation__button, #market-picker-trigger, .header-market-search")
+                page.wait_for_selector("input.market-search__input, input[placeholder*='PLZ']")
+
+                # PLZ eintippen und abschicken
+                page.fill("input.market-search__input, input[placeholder*='PLZ']", self.plz)
+                page.press("input.market-search__input, input[placeholder*='PLZ']", "Enter")
+
+                # Den ersten vorgeschlagenen Markt in der Liste anklicken
+                page.wait_for_selector(".market-search__result-item .btn, .penny-market-select-btn")
+                page.click(".market-search__result-item .btn, .penny-market-select-btn")
+
+                # Wichtig: Kurz warten, damit Penny die Seite mit den neuen regionalen Preisen neu lädt
+                page.wait_for_timeout(2500)
+
+        except Exception as market_error:
+            # Falls sich ein Selektor geändert hat, bricht nicht der ganze Scraper ab,
+            # sondern nutzt die Standard-Preise
+            log.warning(f"Marktauswahl bei Penny fehlgeschlagen (nutze Standard-Preise): {market_error}")
+
+        # =========================================================================
+        # ENDE NEUER BLOCK - AB HIER DEIN ORIGINALER CODE
+        # =========================================================================
+
         alle_produkte = []
 
         # 1. Alle Produkte von allen Seiten einsammeln
@@ -124,22 +164,10 @@ class PennyScraper(BaseScraper):
         gefilterte_produkte = []
         suchwort = kategorie.lower()
 
-
         # Falls nach Butter gesucht wird, erweitern wir die Schlagworte automatisch
         synonyme = [suchwort]
         if suchwort == "butter":
             synonyme.extend(["margarine", "kerrygold", "meggle", "milsani", "streichzart", "kaerntnermilch"])
-
-        #for p in alle_produkte:
-            # WIR LASSEN TESTWEISE JEDE KARTE DURCH:
-        #    sauberes_produkt = {
-        #        "name": p["name"],
-        #        "preis": p["preis"],
-        #        "url": p["url"]
-        #    }
-        #    gefilterte_produkte.append(sauberes_produkt)
-            # Wir drucken JEDES gefundene Produkt, um zu sehen, wie es heißt!
-        #    print(f"Gefundenes Produkt im Speicher: {p['name']} für {p['preis']:.2f} €")
 
         for p in alle_produkte:
             produkt_name_original = p["name"]
@@ -149,15 +177,11 @@ class PennyScraper(BaseScraper):
             karte_html = str(p["raw_card"]).lower()
 
             # 1. ZENTRALE PRÜFUNG ÜBER DIE BASISKLASSE:
-            # Wir übergeben hier den originalen Namen (oder den lower, das ist egal, da ist_stoppwort intern auch .lower() nutzt)
             if self.ist_stoppwort(produkt_name_original, kategorie):
-                # log.info(f"   [STOPPWORT] {produkt_name_original} übersprungen.")
                 continue
 
             # 2. SYNONYM- UND RELEVANZ-FILTER
-            # Wir lassen das Produkt zu, wenn eines der Schlagworte im Namen, im Text oder im HTML der Karte vorkommt
             if any(syn in produkt_name_lower or syn in karte_text or syn in karte_html for syn in synonyme):
-                # Bereinigen (wir extrahieren nur das, was in die Product-Datenstruktur gehört)
                 sauberes_produkt = {
                     "name": produkt_name_original,
                     "preis": p["preis"],

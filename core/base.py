@@ -12,8 +12,11 @@ log = get_logger("base_scraper")
 
 
 class BaseScraper(ABC):
-    def __init__(self, start_url: str):
-        self.start_url = start_url
+
+    def __init__(self, url: str, plz: str = None):
+    # Wir speichern die übergebene 'url' als 'start_url' ab
+        self.start_url = url
+        self.plz = plz  # Hier wird die PLZ für alle Kind-Scraper verankert!
         self.zusatz_urls: List[str] = []
         self.stoppwoerter = self._load_stoppwoerter()
 
@@ -87,7 +90,7 @@ class BaseScraper(ABC):
                 # Verbinden mit Chrome über den persistenten, isolierten Pfad
                 context = p.chromium.launch_persistent_context(
                     user_data_dir=user_data_dir,
-                    headless=False,  # Zeigt das Browserfenster
+                    headless=True,  # Zeigt das Browserfenster
                     channel="chrome",  # Nutzt mein installiertes Google Chrome
                     args=[
                         "--disable-blink-features=AutomationControlled",
