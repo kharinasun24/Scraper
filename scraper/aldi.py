@@ -19,8 +19,10 @@ log = get_logger("aldi")
 
 class AldiScraper(BaseScraper):
 
-    def __init__(self):
-        super().__init__("https://www.aldi-sued.de")
+    # FIX 1: plz im Konstruktor erlauben (standardmäßig None)
+    def __init__(self, plz: str = None):
+        # FIX 2: Die PLZ an den BaseScraper weiterreichen, damit self.plz überall existiert
+        super().__init__("https://www.aldi-sued.de", plz=plz)
 
     def extract_logic(self, page, kategorie="butter"):
 
@@ -51,42 +53,35 @@ class AldiScraper(BaseScraper):
     ############################################################
 
     def _collect_product_links(self, page, kategorie):
-        # Das Suchwort wird nun voll übergeben (kein Abschneiden zu "pizz" mehr)
         suchbegriff = kategorie.strip()
         direkte_produkt_links = set()
 
-        # FIX: Exakt die URL-Struktur, die du im Browser siehst
         search_url = f"https://www.aldi-sued.de/suchergebnisse?q={suchbegriff}"
         log.info(f"[ALDI] Rufe Suchseite über echtes Profil auf: {search_url}")
 
         try:
             page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
-            page.wait_for_timeout(3000) # Kurz warten, bis die Kacheln geladen sind
+            page.wait_for_timeout(3000)
 
-            # 3x sanft scrollen für das Lazy-Loading der Produkte
             for _ in range(3):
                 page.evaluate("window.scrollBy(0, 1500)")
                 page.wait_for_timeout(1000)
 
             soup = BeautifulSoup(page.content(), "html.parser")
 
-            # LINKS EXTRAHIEREN
             for a in soup.find_all("a", href=True):
                 href = str(a["href"])
                 link_text = a.get_text(" ", strip=True).lower()
 
-                # Systemseiten ignorieren
                 ignoriere = ["/k/", "/kategorie/", "/c/", "filter=", "hilfe", "impressum", "datenschutz"]
                 if any(x in href.lower() for x in ignoriere):
                     continue
 
-                # Prüfen, ob der Link oder Text relevant ist
                 ist_relevant = (
                         suchbegriff.lower() in link_text
                         or href.lower().find(suchbegriff.lower()) != -1
                 )
 
-                # Typische ALDI-Produktmerkmale in der URL
                 ist_produkt_pfad = "/p." in href or "/p/" in href or "/produkte/" in href
 
                 if ist_relevant or ist_produkt_pfad:
@@ -109,9 +104,6 @@ class AldiScraper(BaseScraper):
         html = page.content()
         soup = BeautifulSoup(html, "html.parser")
 
-        ##############################################
-        # NAME
-        ##############################################
         title = soup.select_one(".product-details__title")
         if not title:
             log.info("Kein Produktname gefunden.")
@@ -119,9 +111,6 @@ class AldiScraper(BaseScraper):
 
         name = title.get_text(" ", strip=True)
 
-        ##############################################
-        # PREIS
-        ##############################################
         preis_tag = soup.select_one(".base-price__regular")
         if not preis_tag:
             print("   Kein Preis gefunden.")
@@ -135,32 +124,27 @@ class AldiScraper(BaseScraper):
 
         preis = float(match.group().replace(",", "."))
 
-        ##############################################
-        # MARKE
-        ##############################################
         brand = ""
         brand_tag = soup.select_one(".product-details__brand")
         if brand_tag:
             brand = brand_tag.get_text(" ", strip=True)
 
-        ##############################################
-        # URL
-        ##############################################
         url = page.url
 
-        ##############################################
         vollstaendiger_name = f"{brand} {name}".strip()
         ausgabe_text = f"   {vollstaendiger_name} -> {preis:.2f} €"
 
+        # FIX 3: kategorie explizit übergeben (hast du bereits richtig drin)
         if self.ist_stoppwort(vollstaendiger_name, kategorie):
-            # log.info(f"   [STOPPWORT] {vollstaendiger_name} übersprungen.")
             return None
 
         # Suchbegriff-Filter für den finalen Output
-        if kategorie.lower() == "pizza":
-            kategorie = "pizz"
+        filter_wort = kategorie.lower()
+        if filter_wort == "pizza":
+            filter_wort = "pizz"
 
-        if kategorie.lower() not in ausgabe_text.lower():
+        # Robusterer Check: Prüfe, ob das (evtl. verkürzte) Filterwort im Namen vorkommt
+        if filter_wort not in vollstaendiger_name.lower():
             return None
 
         log.info(ausgabe_text)

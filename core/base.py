@@ -77,9 +77,36 @@ class BaseScraper(ABC):
         with sync_playwright() as p:
             username = getpass.getuser()
 
-            # WICHTIGER FIX: Wir erstellen ein eigenes Unterverzeichnis im AppData-Ordner.
-            # Dadurch umgehen wir die "non-default data directory" Sperre von Chrome komplett!
-            user_data_dir = f"C:\\Users\\{username}\\AppData\\Local\\Google\\Chrome\\User Data\\PlaywrightProfile"
+            #user_data_dir = f"C:\\Users\\{username}\\AppData\\Local\\Google\\Chrome\\User Data\\PlaywrightProfile"
+
+            ################################################################################
+
+            import os  # Falls nicht schon ganz oben importiert!
+
+            # 1. Namen des Scrapers holen (z.B. aldiscraper)
+            scraper_name = self.__class__.__name__.lower()
+
+            # 2. Den echten Windows-Usernamen ermitteln (sehr robust)
+            username = os.getlogin()
+
+            # 3. Den Pfad sauber und absolut immun gegen Backslash-Fehler zusammenbauen
+            user_data_dir = os.path.join(
+                "C:\\Users",
+                username,
+                "AppData",
+                "Local",
+                "Google",
+                "Chrome",
+                "User Data",
+                f"PlaywrightProfile_{scraper_name}"
+            )
+
+            # Kleiner Kontroll-Log, damit du genau siehst, wo er hinspringt:
+            log.info(f"Nutze isoliertes Profil-Verzeichnis: {user_data_dir}")
+
+            ################################################################################
+
+
 
             # Falls der Ordner nicht existiert, erstellt Python ihn vollautomatisch
             os.makedirs(user_data_dir, exist_ok=True)
@@ -90,7 +117,7 @@ class BaseScraper(ABC):
                 # Verbinden mit Chrome über den persistenten, isolierten Pfad
                 context = p.chromium.launch_persistent_context(
                     user_data_dir=user_data_dir,
-                    headless=True,  # Zeigt das Browserfenster
+                    headless=False,  # Zeigt das Browserfenster
                     channel="chrome",  # Nutzt mein installiertes Google Chrome
                     args=[
                         "--disable-blink-features=AutomationControlled",
