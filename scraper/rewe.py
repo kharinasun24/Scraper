@@ -8,7 +8,6 @@ log = logging.getLogger(__name__)
 
 class ReweScraper(BaseScraper):
     def __init__(self, plz: str = None):
-        # Wir starten auf der echten, existierenden Hauptseite des Shops
         super().__init__("https://www.rewe.de/shop/", plz=plz)
 
     def extract_logic(self, page, kategorie: str = "butter") -> List[dict]:
@@ -20,10 +19,9 @@ class ReweScraper(BaseScraper):
             page.goto(self.start_url, wait_until="domcontentloaded", timeout=20000)
             page.wait_for_timeout(3000)
         except Exception as e:
-            log.warning(f"Hauptseite laden dauerte zu lange, versuche fortzufahren... {e}")
+            log.warning(f"Hauptseite laden dauerte lang, fahre fort... {e}")
 
-        # 2. Absolut radikaler Cookie-Bypass via JS (damit nichts den Klick blockiert)
-        log.info("Entferne Cookie-Banner aus dem Weg...")
+        # 2. Cookie-Banner per JavaScript restlos entfernen
         try:
             page.evaluate("""
                 const root = document.getElementById('usercentrics-root');
@@ -33,13 +31,41 @@ class ReweScraper(BaseScraper):
                 document.body.style.overflow = 'auto';
             """)
             page.wait_for_timeout(1000)
+            log.info("Cookie-Banner erfolgreich entfernt.")
         except Exception as e:
             log.debug(f"Cookie-Bypass fehlgeschlagen: {e}")
 
-        # 3. JETZT DIE SUCHE ÜBER DAS SEITEN-SUCHFELD AUSFÜHREN
+        # 3. Marktauswahl (nur wenn PLZ übergeben wurde und der Button da ist)
+        if self.plz:
+            log.info(f"Versuche Markt auf PLZ {self.plz} einzustellen...")
+            try:
+                market_btn = page.locator(
+                    "header button:has-text('Markt'), button:has-text('Service'), .market-selector-trigger")
+                # Wir prüfen, ob der Button sichtbar und KLICKBAR (enabled) ist
+                if market_btn.first.is_visible(timeout=3000) and market_btn.first.is_enabled():
+                    market_btn.first.click(force=True)
+                    page.wait_for_timeout(1500)
+
+                    input_field = page.locator(
+                        "input[placeholder*='Postleitzahl'], input[placeholder*='PLZ'], input[id*='market']")
+                    if input_field.first.is_visible(timeout=2000):
+                        input_field.first.fill(self.plz)
+                        page.wait_for_timeout(500)
+                        input_field.first.press("Enter")
+                        page.wait_for_timeout(1500)
+
+                        # Ersten Markt bestätigen falls nötig
+                        select_btn = page.locator("button:has-text('Auswählen'), .select-market-btn").first
+                        if select_btn.is_visible(timeout=2000):
+                            select_btn.click(force=True)
+                            page.wait_for_timeout(2000)
+                        log.info(f"Markt erfolgreich auf {self.plz} gesetzt.")
+            except Exception as market_error:
+                log.warning(f"Marktauswahl übersprungen oder fehlgeschlagen (nicht kritisch): {market_error}")
+
+        # 4. Suche ausführen
         try:
             log.info(f"Suche nach Begriff: {kategorie}")
-            # Robustes Finden des Suchfelds
             search_input = page.locator(
                 "input[type='search'], input[name='searchWord'], input[placeholder*='suchen']").first
 
@@ -48,35 +74,23 @@ class ReweScraper(BaseScraper):
             page.wait_for_timeout(500)
             search_input.press("Enter")
 
-            # Warten, bis die Trefferseite lädt
+            # Warten auf Suchergebnisse
             page.wait_for_selector("main, div[class*='product'], div[class*='tiles'], .search-service-productTile",
                                    timeout=12000)
 
-            # Ein bisschen scrollen, um Lazy-Loading-Bilder und Preise zu laden
+            # Scrollen für Lazy-Loading
             page.evaluate("window.scrollBy(0, 800);")
             page.wait_for_timeout(2000)
         except Exception as e:
             log.error(f"Fehler bei der Ausführung der Suche: {e}")
-            # Wir machen trotzdem einen Screenshot zur Diagnose
-            try:
-                page.screenshot(path="rewe_such_fehler.png")
-            except:
-                pass
             return []
 
-        # ---- KONTROLL-SCREENSHOT ----
-        try:
-            page.screenshot(path="rewe_suchergebnisse.png")
-            log.info("Kontroll-Screenshot 'rewe_suchergebnisse.png' gespeichert.")
-        except Exception:
-            pass
-
-        # 4. HTML parsen
+        # 5. HTML auslesen & parsen
         html = page.content()
         soup = BeautifulSoup(html, "html.parser")
 
         rewe_karten = soup.select(
-            "[class*='product-card'], [class*='ProductCard'], [data-testid='product-tile'], .search-service-productTile, article")
+            "[class*='product-card'], [class*='ProductCard'], [data-testid='product-tile'], article")
         log.info(f"Anzahl gefundener HTML-Strukturen bei REWE: {len(rewe_karten)}")
 
         alle_produkte = []
@@ -103,7 +117,6 @@ class ReweScraper(BaseScraper):
                     continue
                 preis = float(preis_digits)
 
-                # Cent-Korrektur (falls REWE z.B. 159 statt 1.59 liefert)
                 if preis > 50.0 and "." not in preis_clean:
                     preis = preis / 100.0
 
@@ -121,7 +134,7 @@ class ReweScraper(BaseScraper):
             except Exception:
                 continue
 
-        # 5. Filter & Synonyme
+        # 6. Filter & Synonyme
         gefilterte_produkte = []
         suchwort = kategorie.lower()
         synonyme = [suchwort]
@@ -144,7 +157,7 @@ class ReweScraper(BaseScraper):
                 })
                 log.info(f"   [REWE-TREFFER] {produkt_name_original} -> {p['preis']:.2f} €")
 
-        # 6. Duplikate entfernen
+        # 7. Duplikate entfernen
         seen = set()
         unique = []
         for p in gefilterte_produkte:

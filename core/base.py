@@ -1,6 +1,7 @@
 # core/base.py
 
 import os
+import tempfile
 import getpass
 import time
 from abc import ABC, abstractmethod
@@ -55,8 +56,8 @@ class BaseScraper(ABC):
         if kategorie.lower() == "butter":
             name_lower = produkt_name.lower().replace("-", "").strip()
 
-            # Wenn sie IMMER NOCH leer ist, füllen wir sie manuell mit den wichtigsten Notfall-Wörtern,
-            # damit dein Scraper JETZT SOFORT funktioniert, selbst wenn die Textdatei gelöscht wurde!
+         # Wenn sie IMMER NOCH leer ist, füllen wir sie manuell mit den wichtigsten Notfall-Wörtern,
+         # damit mein Scraper JETZT SOFORT funktioniert, selbst wenn die Textdatei gelöscht wurde!
             effektive_stoppwoerter = self.stoppwoerter if self.stoppwoerter else ["keks", "schmalz", "milch", "toast",
                                                                                   "waffel"]
 
@@ -79,34 +80,16 @@ class BaseScraper(ABC):
 
             #user_data_dir = f"C:\\Users\\{username}\\AppData\\Local\\Google\\Chrome\\User Data\\PlaywrightProfile"
 
-            ################################################################################
-
-            import os  # Falls nicht schon ganz oben importiert!
-
             # 1. Namen des Scrapers holen (z.B. aldiscraper)
             scraper_name = self.__class__.__name__.lower()
 
-            # 2. Den echten Windows-Usernamen ermitteln (sehr robust)
-            username = os.getlogin()
+            # 2. RADIKAL-FIX: Ich meide den Benutzer-Ordner komplett wegen DOS-8.3-Kürzeln (A591F~1.GOE)
+            user_data_dir = f"C:\\playwright_profiles\\profile_{scraper_name}"
 
-            # 3. Den Pfad sauber und absolut immun gegen Backslash-Fehler zusammenbauen
-            user_data_dir = os.path.join(
-                "C:\\Users",
-                username,
-                "AppData",
-                "Local",
-                "Google",
-                "Chrome",
-                "User Data",
-                f"PlaywrightProfile_{scraper_name}"
-            )
+            log.info(f"Nutze isoliertes Profil-Verzeichnis: {user_data_dir}")
 
             # Kleiner Kontroll-Log, damit du genau siehst, wo er hinspringt:
             log.info(f"Nutze isoliertes Profil-Verzeichnis: {user_data_dir}")
-
-            ################################################################################
-
-
 
             # Falls der Ordner nicht existiert, erstellt Python ihn vollautomatisch
             os.makedirs(user_data_dir, exist_ok=True)
@@ -128,11 +111,12 @@ class BaseScraper(ABC):
 
                 page = context.pages[0] if context.pages else context.new_page()
 
-                # Zur Startseite surfen
-                page.goto(self.start_url, wait_until="domcontentloaded", timeout=30000)
+        # Zur Startseite surfen - page goto machen aber die Kindklassen, hier will ich also Ressourcen schonen, daher habe ich das ding auskommentiert.
+
+                #page.goto(self.start_url, wait_until="domcontentloaded", timeout=30000)
                 time.sleep(1)
 
-                # Meine Scraper-Logik ausführen
+        # Meine Scraper-Logik ausführen
                 products = self.extract_logic(page, kategorie)
                 return products if isinstance(products, list) else []
 
