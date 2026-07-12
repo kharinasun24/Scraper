@@ -5,21 +5,38 @@ from scraper.rewe import ReweScraper
 from core.products import Product
 from typing import List
 
+import logging
+
+log = logging.getLogger("price.py")
+
 class PriceManager:
+    #def __init__(self, plz: str = None):
+    #    self.plz = plz
+    #    self.scraper_liste = {
+    #        "Penny": PennyScraper(plz=self.plz),
+    #        "Aldi": AldiScraper(plz=self.plz),
+    #        "Rewe": ReweScraper(plz=self.plz)
+    #    }
+
     def __init__(self, plz: str = None):
         self.plz = plz
-        self.scraper_liste = {
-            "Penny": PennyScraper(plz=self.plz),
-            "Aldi": AldiScraper(plz=self.plz),
-            "Rewe": ReweScraper(plz=self.plz)
+        # Wir speichern nur die Klassen, wir instanziieren sie noch nicht!
+        self.scraper_klassen = {
+            "Penny": PennyScraper,
+            "Aldi": AldiScraper,
+            "Rewe": ReweScraper
         }
 
     def alle_produkte(self, kategorie: str = "butter") -> List[Product]:
         alle_produkte: List[Product] = []
 
-        for name, scraper in self.scraper_liste.items():
+        for name, ScraperKlasse in self.scraper_klassen.items():
+            # Erst HIER im Ablauf wird der Scraper exakt im richtigen Moment geboren:
+            scraper = ScraperKlasse(plz=self.plz)
+
             try:
-                roh_produkte = scraper.scrape(kategorie=kategorie)  # Übergabe der Kategorie
+                log.info(f"========== {name.upper()}: Suche nach '{kategorie}' ==========")
+                roh_produkte = scraper.scrape(kategorie=kategorie)
 
                 for p in roh_produkte:
                     if isinstance(p, dict):
@@ -30,19 +47,18 @@ class PriceManager:
                         p.markt = name
                         alle_produkte.append(p)
             except Exception as e:
-                # WICHTIG: Verwende dein Logging oder mach es hier auffälliger
                 print(f"\n!!! CRASH BEI SCRAPER {name} !!!: {e}\n")
-
             finally:
-                # FIX: Hier räumen wir rigoros auf!
-                # Prüfe, ob dein BaseScraper eine Methode wie 'close', 'close_browser' oder 'cleanup' hat.
-                # Meistens heißt sie close() oder close_browser().
+                # Nach der Arbeit sofort den Browser dieses einen Scrapers schließen
                 try:
                     if hasattr(scraper, 'close_browser'):
                         scraper.close_browser()
                     elif hasattr(scraper, 'close'):
                         scraper.close()
                 except Exception as close_error:
-                    print(f"Fehler beim Schließen des Browsers von {name}: {close_error}")
+                    print(f"Fehler beim Schließen von {name}: {close_error}")
+
+                # Objekt zerstören, um Sperren im Dateisystem zu lösen
+                del scraper
 
         return alle_produkte

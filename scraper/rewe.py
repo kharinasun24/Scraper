@@ -13,13 +13,14 @@ class ReweScraper(BaseScraper):
     def extract_logic(self, page, kategorie: str = "butter") -> List[dict]:
         log.info(f"REWE-Extraktion läuft für Kategorie: {kategorie}...")
 
-        # 1. Hauptseite aufrufen
-        log.info(f"Rufe REWE auf: {self.start_url}")
+        # 1. Globale REWE-Suchseite direkt aufrufen
+        direkt_such_url = f"https://www.rewe.de/suche/uebersicht?searchTerm={kategorie}&searchtype=standardSearch"
+        log.info(f"Rufe korrekte REWE-Such-URL auf: {direkt_such_url}")
         try:
-            page.goto(self.start_url, wait_until="domcontentloaded", timeout=20000)
+            page.goto(direkt_such_url, wait_until="domcontentloaded", timeout=25000)
             page.wait_for_timeout(3000)
         except Exception as e:
-            log.warning(f"Hauptseite laden dauerte lang, fahre fort... {e}")
+            log.warning(f"Direktaufruf dauerte lang, fahre fort... {e}")
 
         # 2. Cookie-Banner per JavaScript restlos entfernen
         try:
@@ -35,57 +36,83 @@ class ReweScraper(BaseScraper):
         except Exception as e:
             log.debug(f"Cookie-Bypass fehlgeschlagen: {e}")
 
-        # 3. Marktauswahl (nur wenn PLZ übergeben wurde und der Button da ist)
-        if self.plz:
-            log.info(f"Versuche Markt auf PLZ {self.plz} einzustellen...")
-            try:
-                market_btn = page.locator(
-                    "header button:has-text('Markt'), button:has-text('Service'), .market-selector-trigger")
-                # Wir prüfen, ob der Button sichtbar und KLICKBAR (enabled) ist
-                if market_btn.first.is_visible(timeout=3000) and market_btn.first.is_enabled():
-                    market_btn.first.click(force=True)
-                    page.wait_for_timeout(1500)
+        # =====================================================================
+        # 3. Aggressiver PLZ- / Markt-Auswahl-Bypass
+        # =====================================================================
+        aktuelle_plz = self.plz if self.plz else "68161"
+        log.info(f"Prüfe auf Markt-Auswahl Overlay (PLZ: {aktuelle_plz})...")
 
-                    input_field = page.locator(
-                        "input[placeholder*='Postleitzahl'], input[placeholder*='PLZ'], input[id*='market']")
-                    if input_field.first.is_visible(timeout=2000):
-                        input_field.first.fill(self.plz)
-                        page.wait_for_timeout(500)
-                        input_field.first.press("Enter")
-                        page.wait_for_timeout(1500)
-
-                        # Ersten Markt bestätigen falls nötig
-                        select_btn = page.locator("button:has-text('Auswählen'), .select-market-btn").first
-                        if select_btn.is_visible(timeout=2000):
-                            select_btn.click(force=True)
-                            page.wait_for_timeout(2000)
-                        log.info(f"Markt erfolgreich auf {self.plz} gesetzt.")
-            except Exception as market_error:
-                log.warning(f"Marktauswahl übersprungen oder fehlgeschlagen (nicht kritisch): {market_error}")
-
-        # 4. Suche ausführen
         try:
-            log.info(f"Suche nach Begriff: {kategorie}")
-            search_input = page.locator(
-                "input[type='search'], input[name='searchWord'], input[placeholder*='suchen']").first
+            plz_selectors = [
+                "input[placeholder*='Postleitzahl']",
+                "input[placeholder*='PLZ']",
+                "input[id*='market-search']",
+                "input[id*='plz']",
+                ".uc-marketplace-input",
+                "input[type='text']"
+            ]
 
-            search_input.focus()
-            search_input.fill(kategorie, force=True)
-            page.wait_for_timeout(500)
-            search_input.press("Enter")
+            plz_feld = None
+            for sel in plz_selectors:
+                locator = page.locator(sel).first
+                if locator.is_visible(timeout=1500):
+                    plz_feld = locator
+                    log.info(f"PLZ-Eingabefeld gefunden via: {sel}")
+                    break
 
-            # Warten auf Suchergebnisse
-            page.wait_for_selector("main, div[class*='product'], div[class*='tiles'], .search-service-productTile",
-                                   timeout=12000)
+            if plz_feld:
+                plz_feld.click(force=True)
+                plz_feld.fill("", force=True)
+                plz_feld.type(aktuelle_plz, delay=100)
+                page.wait_for_timeout(500)
+                plz_feld.press("Enter")
+                page.wait_for_timeout(2000)
 
-            # Scrollen für Lazy-Loading
-            page.evaluate("window.scrollBy(0, 800);")
-            page.wait_for_timeout(2000)
+                btn_selectors = [
+                    "button:has-text('Markt auswählen')",
+                    "button:has-text('Auswählen')",
+                    "button:has-text('Speichern')",
+                    "button[type='submit']",
+                    ".uc-marketplace-submit"
+                ]
+                for btn_sel in btn_selectors:
+                    btn_locator = page.locator(btn_sel).first
+                    if btn_locator.is_visible(timeout=1500):
+                        log.info(f"Klicke Bestätigungsbutton: {btn_sel}")
+                        btn_locator.click(force=True)
+                        page.wait_for_timeout(3000)
+                        break
         except Exception as e:
-            log.error(f"Fehler bei der Ausführung der Suche: {e}")
+            log.debug(f"Keine PLZ-Abfrage blockiert den Weg: {e}")
+
+        # =====================================================================
+        # 4. Suchergebnisse verifizieren & nachladen
+        # =====================================================================
+        try:
+            log.info("Warte auf Suchergebnisse der Produkte...")
+            page.wait_for_selector("main, div[class*='product'], div[class*='tiles'], [data-testid='product-tile']",
+                                   timeout=15000)
+            page.wait_for_timeout(2000)
+
+            log.info("Scrolle nach unten, um dynamische Inhalte zu laden...")
+            for i in range(5):
+                page.evaluate("window.scrollBy(0, 1000);")
+                page.wait_for_timeout(1500)
+
+            log.info("Scrollen beendet. Übergebe an HTML-Auswertung.")
+
+        except Exception as e:
+            log.error(f"Fehler beim Laden der Suchergebnis-Seite: {e}")
+            try:
+                page.screenshot(path="rewe_error_fallback.png")
+                log.info("Fehler-Screenshot 'rewe_error_fallback.png' wurde gespeichert.")
+            except:
+                pass
             return []
 
+        # =====================================================================
         # 5. HTML auslesen & parsen
+        # =====================================================================
         html = page.content()
         soup = BeautifulSoup(html, "html.parser")
 
@@ -134,7 +161,9 @@ class ReweScraper(BaseScraper):
             except Exception:
                 continue
 
+        # =====================================================================
         # 6. Filter & Synonyme
+        # =====================================================================
         gefilterte_produkte = []
         suchwort = kategorie.lower()
         synonyme = [suchwort]
@@ -157,7 +186,9 @@ class ReweScraper(BaseScraper):
                 })
                 log.info(f"   [REWE-TREFFER] {produkt_name_original} -> {p['preis']:.2f} €")
 
+        # =====================================================================
         # 7. Duplikate entfernen
+        # =====================================================================
         seen = set()
         unique = []
         for p in gefilterte_produkte:

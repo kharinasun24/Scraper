@@ -72,65 +72,63 @@ class BaseScraper(ABC):
         return False
 
     def scrape(self, kategorie: str = "butter") -> list:
-        # Initialisiere context als None, um den 'cannot access local variable'-Fehler im finally-Block zu verhindern
+        # 1. Ergebnisliste bereitstellen
+        ergebnis_produkte = []
         context = None
 
+        # 2. Namen und absolut einzigartigen Pfad mit Nanosekunden generieren
+        scraper_name = self.__class__.__name__.lower()
+        projekt_ordner = os.getcwd()
+        einzigartiger_name = f"profile_{scraper_name}_{time.perf_counter_ns()}"
+        user_data_dir = os.path.join(projekt_ordner, "playwright_profiles", einzigartiger_name)
+
+        log.info(f"Nutze isoliertes Profil-Verzeichnis: {user_data_dir}")
+
+        # Falls der Ordner nicht existiert, erstellen
+        os.makedirs(user_data_dir, exist_ok=True)
+
+        log.info(f"Starte isolierten Chrome-Browser mit Profil aus: {user_data_dir}")
+
+        # 3. Playwright GENAU EINMAL öffnen
         with sync_playwright() as p:
-            username = getpass.getuser()
-
-            #user_data_dir = f"C:\\Users\\{username}\\AppData\\Local\\Google\\Chrome\\User Data\\PlaywrightProfile"
-
-            # 1. Namen des Scrapers holen (z.B. aldiscraper)
-            scraper_name = self.__class__.__name__.lower()
-
-            # 2. RADIKAL-FIX: Ich meide den Benutzer-Ordner komplett wegen DOS-8.3-Kürzeln (A591F~1.GOE)
-            user_data_dir = f"C:\\playwright_profiles\\profile_{scraper_name}"
-
-            log.info(f"Nutze isoliertes Profil-Verzeichnis: {user_data_dir}")
-
-            # Kleiner Kontroll-Log, damit du genau siehst, wo er hinspringt:
-            log.info(f"Nutze isoliertes Profil-Verzeichnis: {user_data_dir}")
-
-            # Falls der Ordner nicht existiert, erstellt Python ihn vollautomatisch
-            os.makedirs(user_data_dir, exist_ok=True)
-
-            log.info(f"Starte isolierten Chrome-Browser mit Profil aus: {user_data_dir}")
-
             try:
-                # Verbinden mit Chrome über den persistenten, isolierten Pfad
                 context = p.chromium.launch_persistent_context(
                     user_data_dir=user_data_dir,
-                    headless=False,  # Zeigt das Browserfenster
-                    channel="chrome",  # Nutzt mein installiertes Google Chrome
+                    headless=False,  # Unbedingt auf False lassen, damit du siehst, was passiert!
+                    channel="chrome",
+                    slow_mo=100,  # <--- NEU: Verlangsamt Playwright leicht gegen Bot-Erkennung
                     args=[
                         "--disable-blink-features=AutomationControlled",
                         "--start-maximized"
                     ],
-                    no_viewport=True
+                    no_viewport=True,
+                    timeout=15000  # <--- NEU: Maximal 15 Sekunden auf den Browser-Start warten
                 )
 
                 page = context.pages[0] if context.pages else context.new_page()
-
-        # Zur Startseite surfen - page goto machen aber die Kindklassen, hier will ich also Ressourcen schonen, daher habe ich das ding auskommentiert.
-
-                #page.goto(self.start_url, wait_until="domcontentloaded", timeout=30000)
+                page.set_default_timeout(
+                    15000)  # <--- NEU: Jede Aktion bricht nach 15 Sek ab, kein unendlicher Hänger mehr!
+                page.goto(self.start_url, wait_until="domcontentloaded", timeout=30000)
                 time.sleep(1)
 
-        # Meine Scraper-Logik ausführen
+                # Scraper-Logik ausführen und abspeichern
                 products = self.extract_logic(page, kategorie)
-                return products if isinstance(products, list) else []
+                if isinstance(products, list):
+                    ergebnis_produkte = products
 
             except Exception as e:
-                log.error(f"Schwerwiegender Fehler im BaseScraper: {e}")
-                return []
+                log.error(f"Schwerwiegender Fehler im BaseScraper bei {scraper_name}: {e}")
 
             finally:
-                # FIX: Nur schließen, wenn der Context auch wirklich erfolgreich erzeugt wurde!
+                # Sicherstellen, dass das Profil wieder freigegeben wird
                 if context is not None:
                     try:
                         context.close()
                     except Exception:
                         pass
+
+        # 4. Erst wenn Playwright komplett zu ist, Daten zurückgeben
+        return ergebnis_produkte
 
     @abstractmethod
     def extract_logic(self, page, kategorie: str) -> List[dict]:

@@ -43,24 +43,41 @@ def starte_suche_gui(entry_suche, entry_plz, text_output, label_status):
     text_output.update()
 
     try:
-        # 2. Deine bestehende Logik ausführen
-        # (Hinweis: Wenn dein PriceManager die PLZ benötigt, übergib sie hier, z.B. PriceManager(plz=plz))
+        # 2. PriceManager initialisieren
         manager = PriceManager(plz=plz)
-        produkte = manager.alle_produkte(kategorie=kategorie_ziel)
 
+        # --- SICHERHEITS-NETZ START ---
+        # Wir fangen Fehler innerhalb der Scraper-Kette direkt hier ab
+        try:
+            produkte = manager.alle_produkte(kategorie=kategorie_ziel)
+        except Exception as scraper_error:
+            log.error(f"Ein Scraper hat das Programm blockiert: {scraper_error}")
+            # Falls der PriceManager bis zum Absturz schon Teilergebnisse in manager.produkte
+            # (oder ähnlich) gesammelt hat, versuchen wir diese zu retten:
+            produkte = getattr(manager, 'produkte', [])
 
-        # Textfeld für die neuen Ergebnisse leeren
-        text_output.delete("1.0", tk.END)
+            # Hinweis für dich in der GUI einblenden, dass nicht alles geladen wurde
+            text_output.insert(tk.END, f"⚠️ Warnung: Ein Scraper-Fehler ist aufgetreten.\n")
+            text_output.insert(tk.END, f"Details: {scraper_error}\n\n Zeige unvollständige Ergebnisse:\n")
+        # --- SICHERHEITS-NETZ ENDE ---
+
+        # Textfeld für die neuen Ergebnisse leeren (Alte Scraper-Meldungen löschen)
+        # Hinweis: Wenn du Teilergebnisse retten willst, löschen wir das Feld erst NACH der Warnung
+        # oder lassen das Löschen ganz normal hier:
+        # text_output.delete("1.0", tk.END)
 
         if not produkte:
             text_output.insert(tk.END, f"Keine Produkte für '{kategorie_ziel}' gefunden.")
             label_status.config(text="Suche beendet (Keine Ergebnisse).")
             return
 
-        # Nach Preis sortieren
-        produkte.sort(key=lambda p: p.preis)
+        # Nach Preis sortieren (Nur wenn die Produkte eine korrekte Struktur haben)
+        try:
+            produkte.sort(key=lambda p: p.preis)
+        except Exception:
+            pass  # Falls ein Produkt fehlerhaft ist, Sortierung überspringen
 
-        # 3. Ergebnisse in das Tkinter-Textfeld schreiben statt ins Terminal
+        # 3. Ergebnisse in das Tkinter-Textfeld schreiben
         text_output.insert(tk.END, "=" * 50 + "\n")
         text_output.insert(tk.END, f"      --- RESULT {kategorie_ziel.upper()} ---\n")
         text_output.insert(tk.END, "=" * 50 + "\n")
@@ -69,13 +86,13 @@ def starte_suche_gui(entry_suche, entry_plz, text_output, label_status):
             text_output.insert(tk.END, f"[{p.markt.upper()}] {p.name}: {p.preis:.2f} €\n")
 
         text_output.insert(tk.END, "=" * 50 + "\n")
-        label_status.config(text="Suche erfolgreich abgeschlossen!")
+        label_status.config(text="Suche abgeschlossen (evtl. unvollständig, siehe Log)!")
 
     except Exception as e:
         label_status.config(text="Fehler bei der Suche.")
         text_output.delete("1.0", tk.END)
-        text_output.insert(tk.END, f"Ein Fehler ist aufgetreten:\n{str(e)}")
-        messagebox.showerror("Scraper Fehler", f"Da lief etwas schief: {e}")
+        text_output.insert(tk.END, f"Ein kritischer Fehler ist aufgetreten:\n{str(e)}")
+        messagebox.showerror("Scraper Fehler", f"Da lief etwas komplett schief: {e}")
 
 
 if __name__ == "__main__":
