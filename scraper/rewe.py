@@ -90,8 +90,13 @@ class ReweScraper(BaseScraper):
         # =====================================================================
         try:
             log.info("Warte auf Suchergebnisse der Produkte...")
-            page.wait_for_selector("main, div[class*='product'], div[class*='tiles'], [data-testid='product-tile']",
-                                   timeout=15000)
+
+            # KORREKTUR: Wir warten nur darauf, dass die Elemente im DOM existieren (state="attached")
+            page.wait_for_selector(
+                "main, div[class*='product'], div[class*='tiles'], [data-testid='product-tile'], .spr-landing-page-products-grid",
+                timeout=15000,
+                state="attached"
+            )
             page.wait_for_timeout(2000)
 
             log.info("Scrolle nach unten, um dynamische Inhalte zu laden...")
