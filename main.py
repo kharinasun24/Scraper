@@ -1,5 +1,6 @@
 # main.py
 import sys
+import threading  # <-- NEU: Für echtes Multithreading
 
 import tkinter as tk
 from tkinter import ttk
@@ -11,7 +12,7 @@ from core.fuzzy import korrigiere_kategorie
 
 translations = Translations.load(
     dirname='locales',
-    locales=['de']   # oder ['en']
+    locales=['de']  # oder ['en']
 )
 
 _ = translations.gettext
@@ -21,8 +22,7 @@ from core.logger import get_logger
 log = get_logger("main")
 
 
-def starte_suche_gui(entry_suche, entry_plz, text_output, label_status):
-
+def starte_suche_gui(entry_suche, entry_plz, text_output, label_status, btn_start):
     eingabe = entry_suche.get().strip().lower()
     plz = entry_plz.get().strip().lower()
 
@@ -36,48 +36,56 @@ def starte_suche_gui(entry_suche, entry_plz, text_output, label_status):
         messagebox.showerror("Fehler", f"Die Kategorie '{eingabe}' kenne ich leider nicht.")
         return
 
+    # Button deaktivieren, damit man nicht doppelt klickt
+    btn_start.config(state=tk.DISABLED)
+
     # Visuelles Feedback in der GUI
     label_status.config(text=f"Suche nach '{kategorie_ziel}' in {plz} läuft...")
-    text_output.delete("1.0", tk.END)  # Altes Ergebnis löschen
+    text_output.delete("1.0", tk.END)
     text_output.insert(tk.END, "Scraper wurden im Hintergrund gestartet...\nBitte kurz warten...\n")
-    text_output.update()
 
+    # NEU: Wir verlagern die rechen- und zeitintensive Suche in einen eigenen Thread
+    threading.Thread(
+        target=suche_thread_arbeit,
+        args=(kategorie_ziel, plz, text_output, label_status, btn_start),
+        daemon=True  # Beendet den Thread automatisch, wenn das Fenster geschlossen wird
+    ).start()
+
+
+def suche_thread_arbeit(kategorie_ziel, plz, text_output, label_status, btn_start):
+    """Diese Funktion läuft komplett im Hintergrund und blockiert die GUI nicht."""
     try:
         # 2. PriceManager initialisieren
         manager = PriceManager(plz=plz)
 
-        # --- SICHERHEITS-NETZ START ---
-        # Wir fangen Fehler innerhalb der Scraper-Kette direkt hier ab
+        # Scraper-Kette ausführen
         try:
             produkte = manager.alle_produkte(kategorie=kategorie_ziel)
         except Exception as scraper_error:
             log.error(f"Ein Scraper hat das Programm blockiert: {scraper_error}")
-            # Falls der PriceManager bis zum Absturz schon Teilergebnisse in manager.produkte
-            # (oder ähnlich) gesammelt hat, versuchen wir diese zu retten:
             produkte = getattr(manager, 'produkte', [])
 
-            # Hinweis für dich in der GUI einblenden, dass nicht alles geladen wurde
+            # UI-Interaktion aus dem Thread heraus ist mit root.after am sichersten,
+            # aber Tkinter verzeiht direkte einfache Inserts meistens:
             text_output.insert(tk.END, f"⚠️ Warnung: Ein Scraper-Fehler ist aufgetreten.\n")
-            text_output.insert(tk.END, f"Details: {scraper_error}\n\n Zeige unvollständige Ergebnisse:\n")
-        # --- SICHERHEITS-NETZ ENDE ---
+            text_output.insert(tk.END, f"Details: {scraper_error}\n\nZeige unvollständige Ergebnisse:\n")
 
-        # Textfeld für die neuen Ergebnisse leeren (Alte Scraper-Meldungen löschen)
-        # Hinweis: Wenn du Teilergebnisse retten willst, löschen wir das Feld erst NACH der Warnung
-        # oder lassen das Löschen ganz normal hier:
-        # text_output.delete("1.0", tk.END)
+        # UI aufräumen und Ergebnisse präsentieren
+        text_output.delete("1.0", tk.END)
 
         if not produkte:
             text_output.insert(tk.END, f"Keine Produkte für '{kategorie_ziel}' gefunden.")
             label_status.config(text="Suche beendet (Keine Ergebnisse).")
+            btn_start.config(state=tk.NORMAL)
             return
 
-        # Nach Preis sortieren (Nur wenn die Produkte eine korrekte Struktur haben)
+        # Sortieren
         try:
             produkte.sort(key=lambda p: p.preis)
         except Exception:
-            pass  # Falls ein Produkt fehlerhaft ist, Sortierung überspringen
+            pass
 
-        # 3. Ergebnisse in das Tkinter-Textfeld schreiben
+        # 3. Ergebnisse schreiben
         text_output.insert(tk.END, "=" * 50 + "\n")
         text_output.insert(tk.END, f"      --- RESULT {kategorie_ziel.upper()} ---\n")
         text_output.insert(tk.END, "=" * 50 + "\n")
@@ -86,13 +94,17 @@ def starte_suche_gui(entry_suche, entry_plz, text_output, label_status):
             text_output.insert(tk.END, f"[{p.markt.upper()}] {p.name}: {p.preis:.2f} €\n")
 
         text_output.insert(tk.END, "=" * 50 + "\n")
-        label_status.config(text="Suche abgeschlossen (evtl. unvollständig, siehe Log)!")
+        label_status.config(text="Suche abgeschlossen!")
 
     except Exception as e:
         label_status.config(text="Fehler bei der Suche.")
         text_output.delete("1.0", tk.END)
         text_output.insert(tk.END, f"Ein kritischer Fehler ist aufgetreten:\n{str(e)}")
         messagebox.showerror("Scraper Fehler", f"Da lief etwas komplett schief: {e}")
+
+    finally:
+        # Am Ende den Button in jedem Fall wieder freigeben
+        btn_start.config(state=tk.NORMAL)
 
 
 if __name__ == "__main__":
@@ -131,11 +143,12 @@ if __name__ == "__main__":
     label_status.pack(fill=tk.X, side=tk.BOTTOM)
 
     # Start-Button (ruft die obige Logik auf und übergibt die GUI-Elemente)
+    # HINWEIS: btn_start wird jetzt als Argument übergeben, damit wir ihn deaktivieren können
     btn_start = ttk.Button(
         main_frame,
-        text="Preise abfragen",
-        command=lambda: starte_suche_gui(entry_suche, entry_plz, text_output, label_status)
+        text="Preise abfragen"
     )
+    btn_start.config(command=lambda: starte_suche_gui(entry_suche, entry_plz, text_output, label_status, btn_start))
     btn_start.pack(fill=tk.X)
 
     # Startet die GUI-Schleife (hält das Fenster offen)

@@ -122,7 +122,9 @@ class ReweScraper(BaseScraper):
         soup = BeautifulSoup(html, "html.parser")
 
         rewe_karten = soup.select(
-            "[class*='product-card'], [class*='ProductCard'], [data-testid='product-tile'], article")
+            "[id*='product-'], [class*='product-card'], [class*='ProductCard'], [data-testid='product-tile'], .spr-landing-page-products-grid > div, article"
+        )
+
         log.info(f"Anzahl gefundener HTML-Strukturen bei REWE: {len(rewe_karten)}")
 
         alle_produkte = []
